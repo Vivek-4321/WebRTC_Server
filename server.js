@@ -398,17 +398,17 @@
 // }
 
 // app.listen(5000, () => console.log("server started"));
-
-// backend/server.js
 const express = require("express");
 const { Pool } = require("pg");
 const crypto = require("crypto");
 const cors = require("cors");
+require('dotenv').config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Create database pool
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: {
@@ -416,78 +416,116 @@ const pool = new Pool({
   },
 });
 
-// Helper function to hash password
-const hashPassword = (password) => {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto
-    .pbkdf2Sync(password, salt, 1000, 64, "sha512")
-    .toString("hex");
-  return `${salt}:${hash}`;
-};
-
-// Helper function to verify password
-const verifyPassword = (password, hashedPassword) => {
-  const [salt, hash] = hashedPassword.split(":");
-  const verifyHash = crypto
-    .pbkdf2Sync(password, salt, 1000, 64, "sha512")
-    .toString("hex");
-  return hash === verifyHash;
-};
-
-app.post("/api/login", async (req, res) => {
-  console.log("Called login");
-  const { username, password } = req.body;
+// Test database connection before starting server
+async function startServer() {
   try {
-    const result = await pool.query(
-      "SELECT public_id, password_hash FROM users WHERE username = $1",
-      [username]
-    );
+    // Test the connection
+    const client = await pool.connect();
+    console.log('Database connection successful');
+    
+    // Release the client back to the pool
+    client.release();
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "User not found" });
-    }
+    // Helper function to hash password
+    const hashPassword = (password) => {
+      const salt = crypto.randomBytes(16).toString("hex");
+      const hash = crypto
+        .pbkdf2Sync(password, salt, 1000, 64, "sha512")
+        .toString("hex");
+      return `${salt}:${hash}`;
+    };
 
-    const isValid = verifyPassword(password, result.rows[0].password_hash);
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid password" });
-    }
+    // Helper function to verify password
+    const verifyPassword = (password, hashedPassword) => {
+      const [salt, hash] = hashedPassword.split(":");
+      const verifyHash = crypto
+        .pbkdf2Sync(password, salt, 1000, 64, "sha512")
+        .toString("hex");
+      return hash === verifyHash;
+    };
 
-    res.json({ publicId: result.rows[0].public_id });
+    // Add a test endpoint
+    app.get("/api/test", (req, res) => {
+      res.json({ message: "Server is running" });
+    });
+
+    // Login endpoint
+    app.post("/api/login", async (req, res) => {
+      console.log("Login attempt received:", req.body.username);
+      const { username, password } = req.body;
+      
+      try {
+        const result = await pool.query(
+          "SELECT public_id, password_hash FROM users WHERE username = $1",
+          [username]
+        );
+
+        console.log("Query result:", result.rows.length > 0 ? "User found" : "User not found");
+
+        if (result.rows.length === 0) {
+          return res.status(401).json({ error: "User not found" });
+        }
+
+        const isValid = verifyPassword(password, result.rows[0].password_hash);
+        console.log("Password validation:", isValid ? "Success" : "Failed");
+
+        if (!isValid) {
+          return res.status(401).json({ error: "Invalid password" });
+        }
+
+        res.json({ publicId: result.rows[0].public_id });
+      } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
+    // Signup endpoint
+    app.post("/api/signup", async (req, res) => {
+      console.log("Signup attempt received:", req.body.username);
+      const { username, email, password } = req.body;
+
+      try {
+        const checkExisting = await pool.query(
+          "SELECT username FROM users WHERE username = $1 OR email = $2",
+          [username, email]
+        );
+
+        console.log("Existing user check:", checkExisting.rows.length > 0 ? "User exists" : "New user");
+
+        if (checkExisting.rows.length > 0) {
+          return res
+            .status(400)
+            .json({ error: "Username or email already exists" });
+        }
+
+        const hashedPassword = hashPassword(password);
+        const result = await pool.query(
+          "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING public_id",
+          [username, email, hashedPassword]
+        );
+
+        console.log("User created successfully");
+        res.json({ publicId: result.rows[0].public_id });
+      } catch (error) {
+        console.error("Signup error:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
+    // Start the server
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error('Database connection error:', error);
+    process.exit(1);
   }
-});
+}
 
-app.post("/api/signup", async (req, res) => {
-  console.log("Called signup");
-  const { username, email, password } = req.body;
-  try {
-    const checkExisting = await pool.query(
-      "SELECT username FROM users WHERE username = $1 OR email = $2",
-      [username, email]
-    );
-
-    if (checkExisting.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ error: "Username or email already exists" });
-    }
-
-    const hashedPassword = hashPassword(password);
-    const result = await pool.query(
-      "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING public_id",
-      [username, email, hashedPassword]
-    );
-
-    res.json({ publicId: result.rows[0].public_id });
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-
+// Start the server
+console.log('Starting server...');
+console.log('Database URL:', process.env.DB_URL ? 'Is set' : 'Not set');
+startServer();

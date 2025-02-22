@@ -569,20 +569,8 @@ async function startServer() {
         conditions,
         medications
       } = req.body;
-
-      // Log the raw and formatted conditions for debugging
-    console.log('Raw conditions:', conditions);
-    const formattedConditions = formatArrayForPostgres(conditions);
-    console.log('Formatted conditions:', formattedConditions);
     
       try {
-        // Log the conditions before formatting
-        console.log('Raw conditions:', conditions);
-        
-        // Format conditions for PostgreSQL
-        const formattedConditions = formatArrayForPostgres(conditions);
-        console.log('Formatted conditions:', formattedConditions);
-    
         // Insert basic info
         await pool.query(
           "INSERT INTO basic_info (public_id, name, age, gender, height, weight, activity_level) VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -607,12 +595,11 @@ async function startServer() {
           [publicId, formatArrayForPostgres(exerciseTypes), workoutFrequency, workoutDuration]
         );
     
-        // Insert medical info
-        
-    await pool.query(
-      "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
-      [publicId, formattedConditions, medications || '']
-    );
+        // Insert medical info - now using simple strings
+        await pool.query(
+          "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
+          [publicId, conditions || '', medications || '']
+        );
     
         res.json({ message: "Questionnaire data saved successfully" });
       } catch (error) {

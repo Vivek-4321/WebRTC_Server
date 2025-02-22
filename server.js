@@ -398,6 +398,7 @@
 // }
 
 // app.listen(5000, () => console.log("server started"));
+
 const express = require("express");
 const { Pool } = require("pg");
 const crypto = require("crypto");
@@ -534,35 +535,55 @@ async function startServer() {
         medications
       } = req.body;
     
+      // Convert string values to numbers and validate
+      const numericFields = {
+        age: age ? parseInt(age) : null,
+        height: height ? parseFloat(height) : null,
+        weight: weight ? parseFloat(weight) : null,
+        targetWeight: targetWeight ? parseFloat(targetWeight) : null,
+        workoutFrequency: workoutFrequency ? parseInt(workoutFrequency) : null,
+        workoutDuration: workoutDuration ? parseInt(workoutDuration) : null
+      };
+    
+      // Validate required numeric fields
+      for (const [field, value] of Object.entries(numericFields)) {
+        if (value === null || isNaN(value)) {
+          return res.status(400).json({ 
+            error: "Invalid data", 
+            details: `${field} must be a valid number` 
+          });
+        }
+      }
+    
       try {
         // Insert basic info
         await pool.query(
           "INSERT INTO basic_info (public_id, name, age, gender, height, weight, activity_level) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [publicId, name, age, gender, height, weight, activityLevel]
+          [publicId, name, numericFields.age, gender, numericFields.height, numericFields.weight, activityLevel]
         );
     
         // Insert dietary preferences
         await pool.query(
           "INSERT INTO dietary_preferences (public_id, diet_type, allergies, intolerances) VALUES ($1, $2, $3, $4)",
-          [publicId, dietType, allergies, intolerances]
+          [publicId, dietType, allergies || [], intolerances || []]
         );
     
         // Insert health goals
         await pool.query(
           "INSERT INTO health_goals (public_id, primary_goal, target_weight) VALUES ($1, $2, $3)",
-          [publicId, primaryGoal, targetWeight]
+          [publicId, primaryGoal, numericFields.targetWeight]
         );
     
         // Insert activity info
         await pool.query(
           "INSERT INTO activity_info (public_id, exercise_type, workout_frequency, workout_duration) VALUES ($1, $2, $3, $4)",
-          [publicId, exerciseTypes, workoutFrequency, workoutDuration]
+          [publicId, exerciseTypes || [], numericFields.workoutFrequency, numericFields.workoutDuration]
         );
     
         // Insert medical info
         await pool.query(
           "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
-          [publicId, conditions, medications]
+          [publicId, conditions || [], medications || '']
         );
     
         res.json({ message: "Questionnaire data saved successfully" });

@@ -410,8 +410,7 @@ app.use(express.json());
 app.use(cors());
 
 const pool = new Pool({
-  connectionString:
-    "postgresql://admin:ebDDADunD7vlIY1oo0Je39ZrnWmD7BcN@dpg-cusm3l7noe9s7390j3g0-a.oregon-postgres.render.com/diana",
+  connectionString: process.env.DB_URL,
   ssl: {
     rejectUnauthorized: false,
   },

@@ -399,6 +399,7 @@
 
 // app.listen(5000, () => console.log("server started"));
 
+//server.js
 const express = require("express");
 const { Pool } = require("pg");
 const crypto = require("crypto");
@@ -416,6 +417,40 @@ const pool = new Pool({
     rejectUnauthorized: false,
   },
 });
+
+const formatArrayForPostgres = (input) => {
+  // If input is null, undefined, or empty array
+  if (!input || (Array.isArray(input) && input.length === 0)) {
+    return "{}";
+  }
+
+  // If input is a string
+  if (typeof input === 'string') {
+    // Return empty array if input is "Nothing"
+    if (input.toLowerCase() === "nothing") {
+      return "{}";
+    }
+    
+    const items = input
+      .split(',')
+      .map(item => item.trim())
+      .filter(item => item && item.toLowerCase() !== "nothing")
+      .map(item => `"${item.replace(/"/g, '""')}"`);
+    
+    return items.length ? `{${items.join(',')}}` : "{}";
+  }
+
+  // If input is an array
+  if (Array.isArray(input)) {
+    const cleanedArray = input
+      .filter(item => item && item.trim() && item.toLowerCase() !== "nothing")
+      .map(item => `"${item.trim().replace(/"/g, '""')}"`);
+    
+    return cleanedArray.length ? `{${cleanedArray.join(',')}}` : "{}";
+  }
+
+  return "{}";
+};
 
 // Test database connection before starting server
 async function startServer() {
@@ -534,34 +569,11 @@ async function startServer() {
         conditions,
         medications
       } = req.body;
-    
-      // Helper function to ensure proper array format for PostgreSQL
-      const formatArrayForPostgres = (input) => {
-        // Handle special cases
-        if (!input || input === "Nothing" || input === "") {
-          return "{}";  // Empty PostgreSQL array
-        }
-    
-        // If it's already an array
-        if (Array.isArray(input)) {
-          const cleanedArray = input
-            .filter(item => item && item.trim() && item.trim() !== "Nothing")
-            .map(item => `"${item.trim().replace(/"/g, '""')}"`);
-          return cleanedArray.length ? `{${cleanedArray.join(',')}}` : "{}";
-        }
-    
-        // If it's a string (comma-separated values)
-        if (typeof input === 'string') {
-          const items = input
-            .split(',')
-            .map(item => item.trim())
-            .filter(item => item && item !== "Nothing")
-            .map(item => `"${item.replace(/"/g, '""')}"`);
-          return items.length ? `{${items.join(',')}}` : "{}";
-        }
-    
-        return "{}";  // Default to empty array for any other case
-      };
+
+      // Log the raw and formatted conditions for debugging
+    console.log('Raw conditions:', conditions);
+    const formattedConditions = formatArrayForPostgres(conditions);
+    console.log('Formatted conditions:', formattedConditions);
     
       try {
         // Log the conditions before formatting
@@ -596,10 +608,11 @@ async function startServer() {
         );
     
         // Insert medical info
-        await pool.query(
-          "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
-          [publicId, formattedConditions, medications || '']
-        );
+        
+    await pool.query(
+      "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
+      [publicId, formattedConditions, medications || '']
+    );
     
         res.json({ message: "Questionnaire data saved successfully" });
       } catch (error) {

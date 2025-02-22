@@ -513,6 +513,65 @@ async function startServer() {
       }
     });
 
+    app.post("/api/questionnaire", async (req, res) => {
+      const {
+        publicId,
+        name,
+        age,
+        gender,
+        height,
+        weight,
+        activityLevel,
+        dietType,
+        allergies,
+        intolerances,
+        primaryGoal,
+        targetWeight,
+        exerciseTypes,
+        workoutFrequency,
+        workoutDuration,
+        conditions,
+        medications
+      } = req.body;
+    
+      try {
+        // Insert basic info
+        await pool.query(
+          "INSERT INTO basic_info (public_id, name, age, gender, height, weight, activity_level) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+          [publicId, name, age, gender, height, weight, activityLevel]
+        );
+    
+        // Insert dietary preferences
+        await pool.query(
+          "INSERT INTO dietary_preferences (public_id, diet_type, allergies, intolerances) VALUES ($1, $2, $3, $4)",
+          [publicId, dietType, allergies, intolerances]
+        );
+    
+        // Insert health goals
+        await pool.query(
+          "INSERT INTO health_goals (public_id, primary_goal, target_weight) VALUES ($1, $2, $3)",
+          [publicId, primaryGoal, targetWeight]
+        );
+    
+        // Insert activity info
+        await pool.query(
+          "INSERT INTO activity_info (public_id, exercise_type, workout_frequency, workout_duration) VALUES ($1, $2, $3, $4)",
+          [publicId, exerciseTypes, workoutFrequency, workoutDuration]
+        );
+    
+        // Insert medical info
+        await pool.query(
+          "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
+          [publicId, conditions, medications]
+        );
+    
+        res.json({ message: "Questionnaire data saved successfully" });
+      } catch (error) {
+        console.error("Error saving questionnaire data:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
     // Start the server
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

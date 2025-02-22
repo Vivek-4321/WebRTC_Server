@@ -623,6 +623,8 @@ async function startServer() {
       }
     });
 
+    // Add these endpoints to server.js before the server.listen() call
+
     // Get profile data
     app.get("/api/profile/:publicId", async (req, res) => {
       const { publicId } = req.params;
@@ -661,6 +663,11 @@ async function startServer() {
           ...healthGoals.rows[0],
           ...activityInfo.rows[0],
           ...medicalInfo.rows[0],
+          // Set default values for required fields if they're null
+          activityLevel: basicInfo.rows[0]?.activity_level || "Sedentary",
+          dietType: dietaryPreferences.rows[0]?.diet_type || "Non-vegetarian",
+          primaryGoal: healthGoals.rows[0]?.primary_goal || "Weight Loss",
+          gender: basicInfo.rows[0]?.gender || "Not Specified",
         };
 
         res.json(profileData);
@@ -676,70 +683,86 @@ async function startServer() {
       const {
         name,
         age,
-        gender,
+        gender = "Not Specified",
         height,
         weight,
-        activityLevel,
-        dietType,
-        allergies,
-        intolerances,
-        primaryGoal,
+        activityLevel = "Sedentary",
+        dietType = "Non-vegetarian",
+        allergies = [],
+        intolerances = [],
+        primaryGoal = "Weight Loss",
         targetWeight,
-        exerciseTypes,
+        exerciseTypes = [],
         workoutFrequency,
         workoutDuration,
-        conditions,
-        medications,
+        conditions = "",
+        medications = "",
       } = req.body;
 
       try {
-        // Update each table
-        await pool.query(
-          `UPDATE basic_info 
-       SET name = $1, age = $2, gender = $3, height = $4, weight = $5, activity_level = $6 
-       WHERE public_id = $7`,
-          [name, age, gender, height, weight, activityLevel, publicId]
-        );
+        // Start a transaction
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
 
-        await pool.query(
-          `UPDATE dietary_preferences 
-       SET diet_type = $1, allergies = $2, intolerances = $3 
-       WHERE public_id = $4`,
-          [
-            dietType,
-            formatArrayForPostgres(allergies),
-            formatArrayForPostgres(intolerances),
-            publicId,
-          ]
-        );
+          // Update basic_info
+          await client.query(
+            `UPDATE basic_info 
+         SET name = $1, age = $2, gender = $3, height = $4, weight = $5, activity_level = $6 
+         WHERE public_id = $7`,
+            [name, age, gender, height, weight, activityLevel, publicId]
+          );
 
-        await pool.query(
-          `UPDATE health_goals 
-       SET primary_goal = $1, target_weight = $2 
-       WHERE public_id = $3`,
-          [primaryGoal, targetWeight, publicId]
-        );
+          // Update dietary_preferences
+          await client.query(
+            `UPDATE dietary_preferences 
+         SET diet_type = $1, allergies = $2, intolerances = $3 
+         WHERE public_id = $4`,
+            [
+              dietType,
+              formatArrayForPostgres(allergies),
+              formatArrayForPostgres(intolerances),
+              publicId,
+            ]
+          );
 
-        await pool.query(
-          `UPDATE activity_info 
-       SET exercise_type = $1, workout_frequency = $2, workout_duration = $3 
-       WHERE public_id = $4`,
-          [
-            formatArrayForPostgres(exerciseTypes),
-            workoutFrequency,
-            workoutDuration,
-            publicId,
-          ]
-        );
+          // Update health_goals
+          await client.query(
+            `UPDATE health_goals 
+         SET primary_goal = $1, target_weight = $2 
+         WHERE public_id = $3`,
+            [primaryGoal, targetWeight, publicId]
+          );
 
-        await pool.query(
-          `UPDATE medical_info 
-       SET conditions = $1, medications = $2 
-       WHERE public_id = $3`,
-          [conditions || "", medications || "", publicId]
-        );
+          // Update activity_info
+          await client.query(
+            `UPDATE activity_info 
+         SET exercise_type = $1, workout_frequency = $2, workout_duration = $3 
+         WHERE public_id = $4`,
+            [
+              formatArrayForPostgres(exerciseTypes),
+              workoutFrequency,
+              workoutDuration,
+              publicId,
+            ]
+          );
 
-        res.json({ message: "Profile updated successfully" });
+          // Update medical_info
+          await client.query(
+            `UPDATE medical_info 
+         SET conditions = $1, medications = $2 
+         WHERE public_id = $3`,
+            [conditions || "", medications || "", publicId]
+          );
+
+          await client.query("COMMIT");
+          res.json({ message: "Profile updated successfully" });
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
       } catch (error) {
         console.error("Error updating profile:", error);
         res.status(500).json({ error: "Server error", details: error.message });

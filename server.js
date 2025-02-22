@@ -537,27 +537,40 @@ async function startServer() {
     
       // Helper function to ensure proper array format for PostgreSQL
       const formatArrayForPostgres = (input) => {
-        if (!input) return '{}';
-        
-        let arrayData;
-        if (typeof input === 'string') {
-          // If it's a single string, make it a single-item array
-          arrayData = [input];
-        } else if (Array.isArray(input)) {
-          arrayData = input;
-        } else {
-          return '{}';
+        // Handle special cases
+        if (!input || input === "Nothing" || input === "") {
+          return "{}";  // Empty PostgreSQL array
         }
-        
-        // Filter out empty strings and format for PostgreSQL
-        const cleanedArray = arrayData
-          .filter(item => item && item.trim())
-          .map(item => item.trim());
-          
-        return `{${cleanedArray.join(',')}}`;
+    
+        // If it's already an array
+        if (Array.isArray(input)) {
+          const cleanedArray = input
+            .filter(item => item && item.trim() && item.trim() !== "Nothing")
+            .map(item => `"${item.trim().replace(/"/g, '""')}"`);
+          return cleanedArray.length ? `{${cleanedArray.join(',')}}` : "{}";
+        }
+    
+        // If it's a string (comma-separated values)
+        if (typeof input === 'string') {
+          const items = input
+            .split(',')
+            .map(item => item.trim())
+            .filter(item => item && item !== "Nothing")
+            .map(item => `"${item.replace(/"/g, '""')}"`);
+          return items.length ? `{${items.join(',')}}` : "{}";
+        }
+    
+        return "{}";  // Default to empty array for any other case
       };
     
       try {
+        // Log the conditions before formatting
+        console.log('Raw conditions:', conditions);
+        
+        // Format conditions for PostgreSQL
+        const formattedConditions = formatArrayForPostgres(conditions);
+        console.log('Formatted conditions:', formattedConditions);
+    
         // Insert basic info
         await pool.query(
           "INSERT INTO basic_info (public_id, name, age, gender, height, weight, activity_level) VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -585,7 +598,7 @@ async function startServer() {
         // Insert medical info
         await pool.query(
           "INSERT INTO medical_info (public_id, conditions, medications) VALUES ($1, $2, $3)",
-          [publicId, formatArrayForPostgres(conditions), medications || '']
+          [publicId, formattedConditions, medications || '']
         );
     
         res.json({ message: "Questionnaire data saved successfully" });

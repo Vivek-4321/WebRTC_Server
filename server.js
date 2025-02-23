@@ -772,43 +772,60 @@ async function startServer() {
     // Get exercises and progress for a user
     app.get("/api/exercises/:publicId", async (req, res) => {
       const { publicId } = req.params;
-
+    
       try {
+        // Get user's weight for calorie calculations
+        const userResult = await pool.query(
+          `SELECT weight FROM basic_info WHERE public_id = $1::uuid`,
+          [publicId]
+        );
+        const userWeight = userResult.rows[0]?.weight || 70; // Default to 70kg if not found
+    
         // Get today's exercises
         const exercisesResult = await pool.query(
           `SELECT exercise_list 
-       FROM daily_exercise_list 
-       WHERE public_id = $1::uuid 
-       AND date_generated = CURRENT_DATE`,
+           FROM daily_exercise_list 
+           WHERE public_id = $1::uuid 
+           AND date_generated = CURRENT_DATE`,
           [publicId]
         );
-
+    
         // Get completed exercises
         const completedResult = await pool.query(
-          `SELECT exercise_name 
-       FROM user_workout_progress 
-       WHERE public_id = $1::uuid 
-       AND date_completed = CURRENT_DATE`,
+          `SELECT exercise_name, duration_minutes 
+           FROM user_workout_progress 
+           WHERE public_id = $1::uuid 
+           AND date_completed = CURRENT_DATE`,
           [publicId]
         );
-
+    
         // Get daily calories
         const caloriesResult = await pool.query(
           `SELECT total_calories 
-       FROM daily_progress 
-       WHERE public_id = $1::uuid 
-       AND date_completed = CURRENT_DATE`,
+           FROM daily_progress 
+           WHERE public_id = $1::uuid 
+           AND date_completed = CURRENT_DATE`,
           [publicId]
         );
-
+    
         const exercises = exercisesResult.rows[0]?.exercise_list || [];
         const completed = completedResult.rows.map((row) => row.exercise_name);
+        const durations = completedResult.rows.reduce((acc, row) => {
+          acc[row.exercise_name] = row.duration_minutes;
+          return acc;
+        }, {});
         const dailyCalories = caloriesResult.rows[0]?.total_calories || 0;
-
+    
+        // Add durations to exercises
+        const exercisesWithDurations = exercises.map(exercise => ({
+          ...exercise,
+          duration: durations[exercise.Exercise] || exercise.duration || 30
+        }));
+    
         res.json({
-          exercises,
+          exercises: exercisesWithDurations,
           completed,
-          daily_calories: dailyCalories,
+          daily_calories: dailyCalories
         });
       } catch (error) {
         console.error("Error fetching exercises:", error);
@@ -856,36 +873,35 @@ async function startServer() {
 
     // Complete an exercise
     app.post("/api/complete-exercise", async (req, res) => {
-      const { publicId, exercise, calories } = req.body;
-
+      const { publicId, exercise, calories, duration } = req.body;
+    
       try {
-        // Start a transaction
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-
-          // Add exercise completion record
+    
+          // Add exercise completion record with duration
           await client.query(
             `INSERT INTO user_workout_progress 
-          (public_id, exercise_name, calories_burned)
-        VALUES ($1::uuid, $2, $3)
-        ON CONFLICT (public_id, exercise_name, date_completed) 
-        DO NOTHING`,
-            [publicId, exercise, calories]
+            (public_id, exercise_name, calories_burned, duration_minutes)
+            VALUES ($1::uuid, $2, $3, $4)
+            ON CONFLICT (public_id, exercise_name, date_completed) 
+            DO NOTHING`,
+            [publicId, exercise, calories, duration]
           );
-
+    
           // Update daily calories
           await client.query(
             `INSERT INTO daily_progress 
-          (public_id, total_calories)
-        VALUES ($1::uuid, $2)
-        ON CONFLICT (public_id, date_completed) 
-        DO UPDATE SET 
-          total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
-          updated_at = CURRENT_TIMESTAMP`,
+            (public_id, total_calories)
+            VALUES ($1::uuid, $2)
+            ON CONFLICT (public_id, date_completed) 
+            DO UPDATE SET 
+              total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
+              updated_at = CURRENT_TIMESTAMP`,
             [publicId, calories]
           );
-
+    
           await client.query("COMMIT");
           res.json({ message: "Exercise completed successfully" });
         } catch (e) {
@@ -975,68 +991,67 @@ async function startServer() {
     app.get("/api/available-exercises", async (req, res) => {
       try {
         const result = await pool.query(`
-      SELECT 
-        exercise_name AS "Exercise",
-        description AS "Description",
-        target_muscles AS "Target Muscles",
-        met_value AS "MET Value",
-        category AS "Category",
-        estimated_calories AS "Estimated_Calories",
-        modified_reps_sets AS "Modified_Reps_Sets"
-      FROM exercises 
-      ORDER BY exercise_name
-    `);
+          SELECT 
+            exercise_name AS "Exercise",
+            description AS "Description",
+            target_muscles AS "Target Muscles",
+            met_value AS "MET Value",
+            category AS "Category",
+            duration AS "duration",
+            estimated_calories AS "Estimated_Calories",
+            modified_reps_sets AS "Modified_Reps_Sets"
+          FROM exercises 
+          ORDER BY exercise_name
+        `);
         res.json(result.rows);
       } catch (error) {
         console.error("Error fetching available exercises:", error);
         res.status(500).json({ error: "Server error" });
       }
     });
+    
 
     // Add exercise to user's daily list
     app.post("/api/add-exercise", async (req, res) => {
       const { publicId, exercise } = req.body;
-
+    
       try {
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-
-          // Check if daily exercise list exists
+    
           let result = await client.query(
             `SELECT exercise_list 
-         FROM daily_exercise_list 
-         WHERE public_id = $1::uuid 
-         AND date_generated = CURRENT_DATE`,
+             FROM daily_exercise_list 
+             WHERE public_id = $1::uuid 
+             AND date_generated = CURRENT_DATE`,
             [publicId]
           );
-
+    
           let exercises = result.rows[0]?.exercise_list || [];
-
-          // Add new exercise if not already in list
+    
           if (!exercises.find((e) => e.Exercise === exercise.Exercise)) {
-            // Format exercise data
             const formattedExercise = {
               Exercise: exercise.Exercise,
               Description: exercise.Description,
               "Target Muscles": exercise["Target Muscles"],
+              "MET Value": exercise["MET Value"],
               Estimated_Calories: exercise.Estimated_Calories,
-              Modified_Reps_Sets: exercise.Modified_Reps_Sets,
-              Category: exercise.Category,
+              duration: exercise.duration || 30,
+              Category: exercise.Category
             };
-
+    
             exercises = [...exercises, formattedExercise];
-
-            // Update or insert daily exercise list
+    
             await client.query(
               `INSERT INTO daily_exercise_list (public_id, exercise_list)
-           VALUES ($1::uuid, $2::jsonb)
-           ON CONFLICT (public_id, date_generated) 
-           DO UPDATE SET exercise_list = $2::jsonb`,
+               VALUES ($1::uuid, $2::jsonb)
+               ON CONFLICT (public_id, date_generated) 
+               DO UPDATE SET exercise_list = $2::jsonb`,
               [publicId, JSON.stringify(exercises)]
             );
           }
-
+    
           await client.query("COMMIT");
           res.json({ message: "Exercise added successfully" });
         } catch (e) {

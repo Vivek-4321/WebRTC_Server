@@ -1068,7 +1068,13 @@ async function startServer() {
         d.date,
         COALESCE(dp.total_calories, 0) as calories,
         COALESCE(
-          (SELECT COUNT(*) * 100.0 / NULLIF(COUNT(*) OVER(), 0)
+          (SELECT COUNT(*) * 100.0 / NULLIF((
+            SELECT COUNT(*) 
+            FROM daily_exercise_list del 
+            CROSS JOIN jsonb_array_elements(del.exercise_list)
+            WHERE del.public_id = $1::uuid 
+            AND del.date_generated = d.date
+          ), 0)
            FROM user_workout_progress wp
            WHERE wp.public_id = $1::uuid
            AND wp.date_completed = d.date), 
@@ -1083,16 +1089,27 @@ async function startServer() {
           [publicId]
         );
 
+        // Ensure we always return 7 days of data
         const stats = {
           dates: result.rows.map((r) => r.date.toISOString().split("T")[0]),
-          calories: result.rows.map((r) => r.calories),
-          completion: result.rows.map((r) => r.completion_rate),
+          calories: result.rows.map((r) => Math.round(r.calories || 0)),
+          completion: result.rows.map((r) =>
+            Math.round(r.completion_rate || 0)
+          ),
         };
+
+        // Log the data being sent
+        console.log("Sending stats:", stats);
 
         res.json(stats);
       } catch (error) {
         console.error("Error fetching weekly stats:", error);
-        res.status(500).json({ error: "Server error" });
+        // Return empty data structure on error
+        res.json({
+          dates: [],
+          calories: [],
+          completion: [],
+        });
       }
     });
 

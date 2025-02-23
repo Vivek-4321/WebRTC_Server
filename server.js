@@ -943,6 +943,34 @@ async function startServer() {
       }
     });
 
+    // Generate daily exercises for a user
+    app.post("/api/generate-exercises", async (req, res) => {
+      const { publicId } = req.body;
+
+      try {
+        await pool.query("SELECT generate_daily_exercises($1::uuid)", [
+          publicId,
+        ]);
+
+        // Fetch the generated exercises
+        const result = await pool.query(
+          `SELECT exercise_list 
+       FROM daily_exercise_list 
+       WHERE public_id = $1::uuid 
+       AND date_generated = CURRENT_DATE`,
+          [publicId]
+        );
+
+        res.json({
+          message: "Exercises generated successfully",
+          exercises: result.rows[0]?.exercise_list || [],
+        });
+      } catch (error) {
+        console.error("Error generating exercises:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
     // Start the server
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

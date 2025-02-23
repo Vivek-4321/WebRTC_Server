@@ -971,6 +971,112 @@ async function startServer() {
       }
     });
 
+    // Get all available exercises
+    app.get("/api/available-exercises", async (req, res) => {
+      try {
+        const result = await pool.query(
+          "SELECT * FROM exercises ORDER BY exercise_name"
+        );
+        res.json(result.rows);
+      } catch (error) {
+        console.error("Error fetching available exercises:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
+    // Get weekly stats
+    app.get("/api/weekly-stats/:publicId", async (req, res) => {
+      const { publicId } = req.params;
+      try {
+        const result = await pool.query(
+          `
+      WITH RECURSIVE dates AS (
+        SELECT CURRENT_DATE - INTERVAL '6 days' as date
+        UNION ALL
+        SELECT date + 1
+        FROM dates
+        WHERE date < CURRENT_DATE
+      )
+      SELECT 
+        d.date,
+        COALESCE(dp.total_calories, 0) as calories,
+        COALESCE(
+          (SELECT COUNT(*) * 100.0 / NULLIF(COUNT(*) OVER(), 0)
+           FROM user_workout_progress wp
+           WHERE wp.public_id = $1::uuid
+           AND wp.date_completed = d.date), 
+          0
+        ) as completion_rate
+      FROM dates d
+      LEFT JOIN daily_progress dp ON 
+        dp.public_id = $1::uuid AND 
+        dp.date_completed = d.date
+      ORDER BY d.date
+    `,
+          [publicId]
+        );
+
+        const stats = {
+          dates: result.rows.map((r) => r.date.toISOString().split("T")[0]),
+          calories: result.rows.map((r) => r.calories),
+          completion: result.rows.map((r) => r.completion_rate),
+        };
+
+        res.json(stats);
+      } catch (error) {
+        console.error("Error fetching weekly stats:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
+    // Add exercise to user's daily list
+    app.post("/api/add-exercise", async (req, res) => {
+      const { publicId, exercise } = req.body;
+
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Check if daily exercise list exists
+          let result = await client.query(
+            `SELECT exercise_list 
+         FROM daily_exercise_list 
+         WHERE public_id = $1::uuid 
+         AND date_generated = CURRENT_DATE`,
+            [publicId]
+          );
+
+          let exercises = result.rows[0]?.exercise_list || [];
+
+          // Add new exercise if not already in list
+          if (!exercises.find((e) => e.Exercise === exercise.Exercise)) {
+            exercises = [...exercises, exercise];
+
+            // Update or insert daily exercise list
+            await client.query(
+              `INSERT INTO daily_exercise_list (public_id, exercise_list)
+           VALUES ($1::uuid, $2::jsonb)
+           ON CONFLICT (public_id, date_generated) 
+           DO UPDATE SET exercise_list = $2::jsonb`,
+              [publicId, JSON.stringify(exercises)]
+            );
+          }
+
+          await client.query("COMMIT");
+          res.json({ message: "Exercise added successfully" });
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Error adding exercise:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
     // Start the server
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

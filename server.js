@@ -769,6 +769,180 @@ async function startServer() {
       }
     });
 
+    // Get exercises and progress for a user
+    app.get("/api/exercises/:publicId", async (req, res) => {
+      const { publicId } = req.params;
+
+      try {
+        // Get today's exercises
+        const exercisesResult = await pool.query(
+          `SELECT exercise_list 
+       FROM daily_exercise_list 
+       WHERE public_id = $1::uuid 
+       AND date_generated = CURRENT_DATE`,
+          [publicId]
+        );
+
+        // Get completed exercises
+        const completedResult = await pool.query(
+          `SELECT exercise_name 
+       FROM user_workout_progress 
+       WHERE public_id = $1::uuid 
+       AND date_completed = CURRENT_DATE`,
+          [publicId]
+        );
+
+        // Get daily calories
+        const caloriesResult = await pool.query(
+          `SELECT total_calories 
+       FROM daily_progress 
+       WHERE public_id = $1::uuid 
+       AND date_completed = CURRENT_DATE`,
+          [publicId]
+        );
+
+        const exercises = exercisesResult.rows[0]?.exercise_list || [];
+        const completed = completedResult.rows.map((row) => row.exercise_name);
+        const dailyCalories = caloriesResult.rows[0]?.total_calories || 0;
+
+        res.json({
+          exercises,
+          completed,
+          daily_calories: dailyCalories,
+        });
+      } catch (error) {
+        console.error("Error fetching exercises:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
+    // Get weekly progress
+    app.get("/api/progress/:publicId", async (req, res) => {
+      const { publicId } = req.params;
+
+      try {
+        const result = await pool.query(
+          `WITH RECURSIVE dates AS (
+        SELECT CURRENT_DATE - INTERVAL '6 days' as date
+        UNION ALL
+        SELECT date + 1
+        FROM dates
+        WHERE date < CURRENT_DATE
+      )
+      SELECT 
+        d.date,
+        COALESCE(dp.total_calories, 0) as actual_calories,
+        COALESCE(
+          (SELECT COUNT(DISTINCT exercise_name)
+           FROM user_workout_progress
+           WHERE public_id = $1::uuid
+           AND date_completed = d.date), 
+          0
+        ) as exercises_completed
+      FROM dates d
+      LEFT JOIN daily_progress dp ON 
+        dp.public_id = $1::uuid AND 
+        dp.date_completed = d.date
+      ORDER BY d.date`,
+          [publicId]
+        );
+
+        res.json(result.rows);
+      } catch (error) {
+        console.error("Error fetching progress:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
+    // Complete an exercise
+    app.post("/api/complete-exercise", async (req, res) => {
+      const { publicId, exercise, calories } = req.body;
+
+      try {
+        // Start a transaction
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Add exercise completion record
+          await client.query(
+            `INSERT INTO user_workout_progress 
+          (public_id, exercise_name, calories_burned)
+        VALUES ($1::uuid, $2, $3)
+        ON CONFLICT (public_id, exercise_name, date_completed) 
+        DO NOTHING`,
+            [publicId, exercise, calories]
+          );
+
+          // Update daily calories
+          await client.query(
+            `INSERT INTO daily_progress 
+          (public_id, total_calories)
+        VALUES ($1::uuid, $2)
+        ON CONFLICT (public_id, date_completed) 
+        DO UPDATE SET 
+          total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
+          updated_at = CURRENT_TIMESTAMP`,
+            [publicId, calories]
+          );
+
+          await client.query("COMMIT");
+          res.json({ message: "Exercise completed successfully" });
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Error completing exercise:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
+    // Remove completed exercise
+    app.post("/api/remove-exercise", async (req, res) => {
+      const { publicId, exercise, calories } = req.body;
+
+      try {
+        // Start a transaction
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Remove exercise completion record
+          await client.query(
+            `DELETE FROM user_workout_progress
+        WHERE public_id = $1::uuid 
+        AND exercise_name = $2 
+        AND date_completed = CURRENT_DATE`,
+            [publicId, exercise]
+          );
+
+          // Update daily calories
+          await client.query(
+            `UPDATE daily_progress
+        SET total_calories = GREATEST(0, total_calories - $2),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE public_id = $1::uuid 
+        AND date_completed = CURRENT_DATE`,
+            [publicId, calories]
+          );
+
+          await client.query("COMMIT");
+          res.json({ message: "Exercise removed successfully" });
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Error removing exercise:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
+      }
+    });
+
     // Start the server
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

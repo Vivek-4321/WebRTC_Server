@@ -971,15 +971,82 @@ async function startServer() {
       }
     });
 
-    // Get all available exercises
+    // Get all available exercises with proper formatting
     app.get("/api/available-exercises", async (req, res) => {
       try {
-        const result = await pool.query(
-          "SELECT * FROM exercises ORDER BY exercise_name"
-        );
+        const result = await pool.query(`
+      SELECT 
+        exercise_name AS "Exercise",
+        description AS "Description",
+        target_muscles AS "Target Muscles",
+        met_value AS "MET Value",
+        category AS "Category",
+        estimated_calories AS "Estimated_Calories",
+        modified_reps_sets AS "Modified_Reps_Sets"
+      FROM exercises 
+      ORDER BY exercise_name
+    `);
         res.json(result.rows);
       } catch (error) {
         console.error("Error fetching available exercises:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
+    // Add exercise to user's daily list
+    app.post("/api/add-exercise", async (req, res) => {
+      const { publicId, exercise } = req.body;
+
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Check if daily exercise list exists
+          let result = await client.query(
+            `SELECT exercise_list 
+         FROM daily_exercise_list 
+         WHERE public_id = $1::uuid 
+         AND date_generated = CURRENT_DATE`,
+            [publicId]
+          );
+
+          let exercises = result.rows[0]?.exercise_list || [];
+
+          // Add new exercise if not already in list
+          if (!exercises.find((e) => e.Exercise === exercise.Exercise)) {
+            // Format exercise data
+            const formattedExercise = {
+              Exercise: exercise.Exercise,
+              Description: exercise.Description,
+              "Target Muscles": exercise["Target Muscles"],
+              Estimated_Calories: exercise.Estimated_Calories,
+              Modified_Reps_Sets: exercise.Modified_Reps_Sets,
+              Category: exercise.Category,
+            };
+
+            exercises = [...exercises, formattedExercise];
+
+            // Update or insert daily exercise list
+            await client.query(
+              `INSERT INTO daily_exercise_list (public_id, exercise_list)
+           VALUES ($1::uuid, $2::jsonb)
+           ON CONFLICT (public_id, date_generated) 
+           DO UPDATE SET exercise_list = $2::jsonb`,
+              [publicId, JSON.stringify(exercises)]
+            );
+          }
+
+          await client.query("COMMIT");
+          res.json({ message: "Exercise added successfully" });
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Error adding exercise:", error);
         res.status(500).json({ error: "Server error" });
       }
     });
@@ -1025,54 +1092,6 @@ async function startServer() {
         res.json(stats);
       } catch (error) {
         console.error("Error fetching weekly stats:", error);
-        res.status(500).json({ error: "Server error" });
-      }
-    });
-
-    // Add exercise to user's daily list
-    app.post("/api/add-exercise", async (req, res) => {
-      const { publicId, exercise } = req.body;
-
-      try {
-        const client = await pool.connect();
-        try {
-          await client.query("BEGIN");
-
-          // Check if daily exercise list exists
-          let result = await client.query(
-            `SELECT exercise_list 
-         FROM daily_exercise_list 
-         WHERE public_id = $1::uuid 
-         AND date_generated = CURRENT_DATE`,
-            [publicId]
-          );
-
-          let exercises = result.rows[0]?.exercise_list || [];
-
-          // Add new exercise if not already in list
-          if (!exercises.find((e) => e.Exercise === exercise.Exercise)) {
-            exercises = [...exercises, exercise];
-
-            // Update or insert daily exercise list
-            await client.query(
-              `INSERT INTO daily_exercise_list (public_id, exercise_list)
-           VALUES ($1::uuid, $2::jsonb)
-           ON CONFLICT (public_id, date_generated) 
-           DO UPDATE SET exercise_list = $2::jsonb`,
-              [publicId, JSON.stringify(exercises)]
-            );
-          }
-
-          await client.query("COMMIT");
-          res.json({ message: "Exercise added successfully" });
-        } catch (e) {
-          await client.query("ROLLBACK");
-          throw e;
-        } finally {
-          client.release();
-        }
-      } catch (error) {
-        console.error("Error adding exercise:", error);
         res.status(500).json({ error: "Server error" });
       }
     });

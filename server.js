@@ -880,36 +880,27 @@ async function startServer() {
         try {
           await client.query("BEGIN");
     
-          // Check if exercise already exists for today
-          const existingExercise = await client.query(
-            `SELECT id FROM user_workout_progress 
-             WHERE public_id = $1::uuid 
-             AND exercise_name = $2 
-             AND date_completed = CURRENT_DATE`,
-            [publicId, exercise]
+          // Add exercise completion record with duration
+          await client.query(
+            `INSERT INTO user_workout_progress 
+            (public_id, exercise_name, calories_burned, duration_minutes)
+            VALUES ($1::uuid, $2, $3, $4)
+            ON CONFLICT (public_id, exercise_name, date_completed) 
+            DO NOTHING`,
+            [publicId, exercise, calories, duration]
           );
     
-          if (existingExercise.rows.length === 0) {
-            // Add exercise completion record with duration
-            await client.query(
-              `INSERT INTO user_workout_progress 
-               (public_id, exercise_name, calories_burned, duration_minutes, date_completed)
-               VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE)`,
-              [publicId, exercise, calories, duration]
-            );
-    
-            // Update or insert into daily_progress
-            await client.query(
-              `INSERT INTO daily_progress 
-               (public_id, date_completed, total_calories, updated_at)
-               VALUES ($1::uuid, CURRENT_DATE, $2, CURRENT_TIMESTAMP)
-               ON CONFLICT (public_id, date_completed) 
-               DO UPDATE SET 
-                 total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
-                 updated_at = CURRENT_TIMESTAMP`,
-              [publicId, calories]
-            );
-          }
+          // Update daily calories
+          await client.query(
+            `INSERT INTO daily_progress 
+            (public_id, total_calories)
+            VALUES ($1::uuid, $2)
+            ON CONFLICT (public_id, date_completed) 
+            DO UPDATE SET 
+              total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
+              updated_at = CURRENT_TIMESTAMP`,
+            [publicId, calories]
+          );
     
           await client.query("COMMIT");
           res.json({ message: "Exercise completed successfully" });
@@ -928,32 +919,32 @@ async function startServer() {
     // Remove completed exercise
     app.post("/api/remove-exercise", async (req, res) => {
       const { publicId, exercise, calories } = req.body;
-    
+
       try {
+        // Start a transaction
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-    
+
           // Remove exercise completion record
           await client.query(
             `DELETE FROM user_workout_progress
-             WHERE public_id = $1::uuid 
-             AND exercise_name = $2 
-             AND date_completed = CURRENT_DATE
-             RETURNING calories_burned`,
+        WHERE public_id = $1::uuid 
+        AND exercise_name = $2 
+        AND date_completed = CURRENT_DATE`,
             [publicId, exercise]
           );
-    
-          // Update daily progress
+
+          // Update daily calories
           await client.query(
             `UPDATE daily_progress
-             SET total_calories = GREATEST(0, total_calories - $2),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE public_id = $1::uuid 
-             AND date_completed = CURRENT_DATE`,
+        SET total_calories = GREATEST(0, total_calories - $2),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE public_id = $1::uuid 
+        AND date_completed = CURRENT_DATE`,
             [publicId, calories]
           );
-    
+
           await client.query("COMMIT");
           res.json({ message: "Exercise removed successfully" });
         } catch (e) {
@@ -1075,71 +1066,64 @@ async function startServer() {
       }
     });
 
+    // Get weekly stats
     app.get("/api/weekly-stats/:publicId", async (req, res) => {
       const { publicId } = req.params;
       try {
-        // Modified query to properly aggregate historical data
         const result = await pool.query(
           `
-          WITH RECURSIVE dates AS (
-            SELECT CURRENT_DATE - INTERVAL '6 days' as date
-            UNION ALL
-            SELECT date + 1
-            FROM dates
-            WHERE date < CURRENT_DATE
-          ),
-          daily_calories AS (
-            SELECT 
-              date_completed as date,
-              SUM(calories_burned) as total_calories
-            FROM user_workout_progress
-            WHERE public_id = $1::uuid
-              AND date_completed >= CURRENT_DATE - INTERVAL '6 days'
-            GROUP BY date_completed
-          )
-          SELECT 
-            d.date,
-            COALESCE(dc.total_calories, 0) as calories,
-            COALESCE(
-              (SELECT COUNT(*) 
-               FROM user_workout_progress wp
-               WHERE wp.public_id = $1::uuid 
-               AND wp.date_completed = d.date), 
-              0
-            ) as completed_exercises,
-            COALESCE(
-              (SELECT COUNT(*) 
-               FROM daily_exercise_list del,
-                    jsonb_array_elements(del.exercise_list) 
-               WHERE del.public_id = $1::uuid 
-               AND del.date_generated = d.date),
-              0
-            ) as total_exercises
-          FROM dates d
-          LEFT JOIN daily_calories dc ON d.date = dc.date
-          ORDER BY d.date;
-          `,
+      WITH RECURSIVE dates AS (
+        SELECT CURRENT_DATE - INTERVAL '6 days' as date
+        UNION ALL
+        SELECT date + 1
+        FROM dates
+        WHERE date < CURRENT_DATE
+      )
+      SELECT 
+        d.date,
+        COALESCE(dp.total_calories, 0) as calories,
+        COALESCE(
+          (SELECT COUNT(*) * 100.0 / NULLIF((
+            SELECT COUNT(*) 
+            FROM daily_exercise_list del 
+            CROSS JOIN jsonb_array_elements(del.exercise_list)
+            WHERE del.public_id = $1::uuid 
+            AND del.date_generated = d.date
+          ), 0)
+           FROM user_workout_progress wp
+           WHERE wp.public_id = $1::uuid
+           AND wp.date_completed = d.date), 
+          0
+        ) as completion_rate
+      FROM dates d
+      LEFT JOIN daily_progress dp ON 
+        dp.public_id = $1::uuid AND 
+        dp.date_completed = d.date
+      ORDER BY d.date
+    `,
           [publicId]
         );
-    
-        // Process the results
+
+        // Ensure we always return 7 days of data
         const stats = {
-          dates: result.rows.map(r => r.date.toISOString().split('T')[0]),
-          calories: result.rows.map(r => Math.round(r.calories || 0)),
-          completion: result.rows.map(r => 
-            r.total_exercises > 0 
-              ? Math.round((r.completed_exercises / r.total_exercises) * 100) 
-              : 0
-          )
+          dates: result.rows.map((r) => r.date.toISOString().split("T")[0]),
+          calories: result.rows.map((r) => Math.round(r.calories || 0)),
+          completion: result.rows.map((r) =>
+            Math.round(r.completion_rate || 0)
+          ),
         };
-    
+
+        // Log the data being sent
+        console.log("Sending stats:", stats);
+
         res.json(stats);
       } catch (error) {
         console.error("Error fetching weekly stats:", error);
+        // Return empty data structure on error
         res.json({
           dates: [],
           calories: [],
-          completion: []
+          completion: [],
         });
       }
     });

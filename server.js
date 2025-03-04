@@ -707,16 +707,16 @@
 
 //           // Update basic_info
 //           await client.query(
-//             `UPDATE basic_info 
-//          SET name = $1, age = $2, gender = $3, height = $4, weight = $5, activity_level = $6 
+//             `UPDATE basic_info
+//          SET name = $1, age = $2, gender = $3, height = $4, weight = $5, activity_level = $6
 //          WHERE public_id = $7`,
 //             [name, age, gender, height, weight, activityLevel, publicId]
 //           );
 
 //           // Update dietary_preferences
 //           await client.query(
-//             `UPDATE dietary_preferences 
-//          SET diet_type = $1, allergies = $2, intolerances = $3 
+//             `UPDATE dietary_preferences
+//          SET diet_type = $1, allergies = $2, intolerances = $3
 //          WHERE public_id = $4`,
 //             [
 //               dietType,
@@ -728,16 +728,16 @@
 
 //           // Update health_goals
 //           await client.query(
-//             `UPDATE health_goals 
-//          SET primary_goal = $1, target_weight = $2 
+//             `UPDATE health_goals
+//          SET primary_goal = $1, target_weight = $2
 //          WHERE public_id = $3`,
 //             [primaryGoal, targetWeight, publicId]
 //           );
 
 //           // Update activity_info
 //           await client.query(
-//             `UPDATE activity_info 
-//          SET exercise_type = $1, workout_frequency = $2, workout_duration = $3 
+//             `UPDATE activity_info
+//          SET exercise_type = $1, workout_frequency = $2, workout_duration = $3
 //          WHERE public_id = $4`,
 //             [
 //               formatArrayForPostgres(exerciseTypes),
@@ -749,8 +749,8 @@
 
 //           // Update medical_info
 //           await client.query(
-//             `UPDATE medical_info 
-//          SET conditions = $1, medications = $2 
+//             `UPDATE medical_info
+//          SET conditions = $1, medications = $2
 //          WHERE public_id = $3`,
 //             [conditions || "", medications || "", publicId]
 //           );
@@ -783,27 +783,27 @@
 
 //         // Get today's exercises
 //         const exercisesResult = await pool.query(
-//           `SELECT exercise_list 
-//            FROM daily_exercise_list 
-//            WHERE public_id = $1::uuid 
+//           `SELECT exercise_list
+//            FROM daily_exercise_list
+//            WHERE public_id = $1::uuid
 //            AND date_generated = CURRENT_DATE`,
 //           [publicId]
 //         );
 
 //         // Get completed exercises
 //         const completedResult = await pool.query(
-//           `SELECT exercise_name, duration_minutes 
-//            FROM user_workout_progress 
-//            WHERE public_id = $1::uuid 
+//           `SELECT exercise_name, duration_minutes
+//            FROM user_workout_progress
+//            WHERE public_id = $1::uuid
 //            AND date_completed = CURRENT_DATE`,
 //           [publicId]
 //         );
 
 //         // Get daily calories
 //         const caloriesResult = await pool.query(
-//           `SELECT total_calories 
-//            FROM daily_progress 
-//            WHERE public_id = $1::uuid 
+//           `SELECT total_calories
+//            FROM daily_progress
+//            WHERE public_id = $1::uuid
 //            AND date_completed = CURRENT_DATE`,
 //           [publicId]
 //         );
@@ -846,19 +846,19 @@
 //         FROM dates
 //         WHERE date < CURRENT_DATE
 //       )
-//       SELECT 
+//       SELECT
 //         d.date,
 //         COALESCE(dp.total_calories, 0) as actual_calories,
 //         COALESCE(
 //           (SELECT COUNT(DISTINCT exercise_name)
 //            FROM user_workout_progress
 //            WHERE public_id = $1::uuid
-//            AND date_completed = d.date), 
+//            AND date_completed = d.date),
 //           0
 //         ) as exercises_completed
 //       FROM dates d
-//       LEFT JOIN daily_progress dp ON 
-//         dp.public_id = $1::uuid AND 
+//       LEFT JOIN daily_progress dp ON
+//         dp.public_id = $1::uuid AND
 //         dp.date_completed = d.date
 //       ORDER BY d.date`,
 //           [publicId]
@@ -874,34 +874,34 @@
 //     // Complete an exercise
 //     app.post("/api/complete-exercise", async (req, res) => {
 //       const { publicId, exercise, calories, duration } = req.body;
-    
+
 //       try {
 //         const client = await pool.connect();
 //         try {
 //           await client.query("BEGIN");
-    
+
 //           // Add exercise completion record with duration
 //           await client.query(
-//             `INSERT INTO user_workout_progress 
+//             `INSERT INTO user_workout_progress
 //             (public_id, exercise_name, calories_burned, duration_minutes, date_completed)
 //             VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE)
-//             ON CONFLICT (public_id, exercise_name, date_completed) 
+//             ON CONFLICT (public_id, exercise_name, date_completed)
 //             DO NOTHING`,
 //             [publicId, exercise, calories, duration]
 //           );
-    
+
 //           // Update daily calories with explicit date
 //           await client.query(
-//             `INSERT INTO daily_progress 
+//             `INSERT INTO daily_progress
 //             (public_id, total_calories, date_completed)
 //             VALUES ($1::uuid, $2, CURRENT_DATE)
-//             ON CONFLICT (public_id, date_completed) 
-//             DO UPDATE SET 
+//             ON CONFLICT (public_id, date_completed)
+//             DO UPDATE SET
 //               total_calories = daily_progress.total_calories + EXCLUDED.total_calories,
 //               updated_at = CURRENT_TIMESTAMP`,
 //             [publicId, calories]
 //           );
-    
+
 //           await client.query("COMMIT");
 //           res.json({ message: "Exercise completed successfully" });
 //         } catch (e) {
@@ -929,8 +929,8 @@
 //           // Remove exercise completion record
 //           await client.query(
 //             `DELETE FROM user_workout_progress
-//         WHERE public_id = $1::uuid 
-//         AND exercise_name = $2 
+//         WHERE public_id = $1::uuid
+//         AND exercise_name = $2
 //         AND date_completed = CURRENT_DATE`,
 //             [publicId, exercise]
 //           );
@@ -940,7 +940,7 @@
 //             `UPDATE daily_progress
 //         SET total_calories = GREATEST(0, total_calories - $2),
 //             updated_at = CURRENT_TIMESTAMP
-//         WHERE public_id = $1::uuid 
+//         WHERE public_id = $1::uuid
 //         AND date_completed = CURRENT_DATE`,
 //             [publicId, calories]
 //           );
@@ -970,9 +970,9 @@
 
 //         // Fetch the generated exercises
 //         const result = await pool.query(
-//           `SELECT exercise_list 
-//        FROM daily_exercise_list 
-//        WHERE public_id = $1::uuid 
+//           `SELECT exercise_list
+//        FROM daily_exercise_list
+//        WHERE public_id = $1::uuid
 //        AND date_generated = CURRENT_DATE`,
 //           [publicId]
 //         );
@@ -991,7 +991,7 @@
 //     app.get("/api/available-exercises", async (req, res) => {
 //       try {
 //         const result = await pool.query(`
-//           SELECT 
+//           SELECT
 //             exercise_name AS "Exercise",
 //             description AS "Description",
 //             target_muscles AS "Target Muscles",
@@ -1000,7 +1000,7 @@
 //             duration AS "duration",
 //             estimated_calories AS "Estimated_Calories",
 //             modified_reps_sets AS "Modified_Reps_Sets"
-//           FROM exercises 
+//           FROM exercises
 //           ORDER BY exercise_name
 //         `);
 //         res.json(result.rows);
@@ -1020,9 +1020,9 @@
 //           await client.query("BEGIN");
 
 //           let result = await client.query(
-//             `SELECT exercise_list 
-//              FROM daily_exercise_list 
-//              WHERE public_id = $1::uuid 
+//             `SELECT exercise_list
+//              FROM daily_exercise_list
+//              WHERE public_id = $1::uuid
 //              AND date_generated = CURRENT_DATE`,
 //             [publicId]
 //           );
@@ -1045,7 +1045,7 @@
 //             await client.query(
 //               `INSERT INTO daily_exercise_list (public_id, exercise_list)
 //                VALUES ($1::uuid, $2::jsonb)
-//                ON CONFLICT (public_id, date_generated) 
+//                ON CONFLICT (public_id, date_generated)
 //                DO UPDATE SET exercise_list = $2::jsonb`,
 //               [publicId, JSON.stringify(exercises)]
 //             );
@@ -1077,25 +1077,25 @@
 //             FROM dates
 //             WHERE date < CURRENT_DATE + INTERVAL '1 day'
 //           )
-//           SELECT 
+//           SELECT
 //             d.date,
 //             COALESCE(dp.total_calories, 0) as calories,
 //             COALESCE(
 //               (SELECT COUNT(*) * 100.0 / NULLIF((
-//                 SELECT COUNT(*) 
-//                 FROM daily_exercise_list del 
+//                 SELECT COUNT(*)
+//                 FROM daily_exercise_list del
 //                 CROSS JOIN jsonb_array_elements(del.exercise_list)
-//                 WHERE del.public_id = $1::uuid 
+//                 WHERE del.public_id = $1::uuid
 //                 AND del.date_generated = d.date
 //               ), 0)
 //                FROM user_workout_progress wp
 //                WHERE wp.public_id = $1::uuid
-//                AND wp.date_completed = d.date), 
+//                AND wp.date_completed = d.date),
 //               0
 //             ) as completion_rate
 //           FROM dates d
-//           LEFT JOIN daily_progress dp ON 
-//             dp.public_id = $1::uuid AND 
+//           LEFT JOIN daily_progress dp ON
+//             dp.public_id = $1::uuid AND
 //             dp.date_completed = d.date
 //           ORDER BY d.date`,
 //           [publicId]
@@ -1204,28 +1204,28 @@ async function generateNutritionalTip() {
         messages: [
           {
             role: "system",
-            content: 
+            content:
               "You are a nutrition expert. Generate a short, interesting nutritional fact or tip. " +
               "Each tip should be informative, accurate, and helpful for someone trying to improve their diet " +
               "or nutritional knowledge. Keep it between 1-3 sentences. " +
               "Format your response as a JSON object with the following fields: " +
               "tip: the nutritional tip or fact, " +
               "source: a credible source for this information (or 'Nutritional Science' if general knowledge), " +
-              "category: one of the following categories: 'Diet Tip', 'Nutrition Fact', 'Health Insight', 'Food Science', 'Metabolism'"
+              "category: one of the following categories: 'Diet Tip', 'Nutrition Fact', 'Health Insight', 'Food Science', 'Metabolism'",
           },
           {
             role: "user",
-            content: "Generate a nutritional tip or fact."
-          }
+            content: "Generate a nutritional tip or fact.",
+          },
         ],
         temperature: 0.7,
-        max_tokens: 150
+        max_tokens: 150,
       },
       {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-        }
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
       }
     );
 
@@ -1240,7 +1240,7 @@ async function generateNutritionalTip() {
       return {
         tip: "Drinking water before meals can help you feel fuller and potentially consume fewer calories.",
         source: "Nutritional Science",
-        category: "Diet Tip"
+        category: "Diet Tip",
       };
     }
   } catch (error) {
@@ -1249,7 +1249,7 @@ async function generateNutritionalTip() {
     return {
       tip: "Eating a diet rich in colorful fruits and vegetables provides a wide range of antioxidants that help protect your cells from damage.",
       source: "Nutritional Science",
-      category: "Nutrition Fact"
+      category: "Nutrition Fact",
     };
   }
 }
@@ -1257,7 +1257,7 @@ async function generateNutritionalTip() {
 // Send push notifications for new nutritional tips
 async function sendTipNotifications() {
   console.log("Starting scheduled tip notifications job");
-  
+
   try {
     // Get all users with their tip preferences and push tokens
     const result = await pool.query(`
@@ -1284,86 +1284,100 @@ async function sendTipNotifications() {
         AND u.push_token IS NOT NULL
     `);
 
-    console.log(`Found ${result.rows.length} users with notification preferences`);
-    
+    console.log(
+      `Found ${result.rows.length} users with notification preferences`
+    );
+
     // Prepare messages for all eligible users
     let messages = [];
     const now = new Date();
-    
+
     for (const user of result.rows) {
       // Skip if user has already seen the latest tip
       if (user.last_seen_tip_id === user.latest_tip_id) {
         continue;
       }
-      
+
       // Check if we should send notification based on frequency
       let shouldSend = false;
-      
+
       switch (user.tip_frequency) {
-        case 'hourly': 
+        case "hourly":
           shouldSend = true; // Always send for hourly
           break;
-        case 'daily':
+        case "daily":
           // Check if user has received a notification in the last 24 hours
-          const dailyCheck = await pool.query(`
+          const dailyCheck = await pool.query(
+            `
             SELECT created_at FROM notification_logs
             WHERE public_id = $1
             AND created_at > NOW() - INTERVAL '24 hours'
             ORDER BY created_at DESC
             LIMIT 1
-          `, [user.public_id]);
+          `,
+            [user.public_id]
+          );
           shouldSend = dailyCheck.rows.length === 0;
           break;
-        case 'weekly':
+        case "weekly":
           // Check if user has received a notification in the last 7 days
-          const weeklyCheck = await pool.query(`
+          const weeklyCheck = await pool.query(
+            `
             SELECT created_at FROM notification_logs
             WHERE public_id = $1
             AND created_at > NOW() - INTERVAL '7 days'
             ORDER BY created_at DESC
             LIMIT 1
-          `, [user.public_id]);
+          `,
+            [user.public_id]
+          );
           shouldSend = weeklyCheck.rows.length === 0;
           break;
       }
-      
+
       if (shouldSend && Expo.isExpoPushToken(user.push_token)) {
         // Add message to batch
         messages.push({
           to: user.push_token,
-          sound: 'default',
-          title: 'New Nutritional Tip',
-          body: user.latest_tip.length > 100 
-            ? `${user.latest_tip.substring(0, 97)}...` 
-            : user.latest_tip,
+          sound: "default",
+          title: "New Nutritional Tip",
+          body:
+            user.latest_tip.length > 100
+              ? `${user.latest_tip.substring(0, 97)}...`
+              : user.latest_tip,
           data: { tipId: user.latest_tip_id },
         });
-        
+
         // Log the notification
-        await pool.query(`
+        await pool.query(
+          `
           INSERT INTO notification_logs (public_id, notification_type, content)
           VALUES ($1, 'nutritional_tip', $2)
-        `, [user.public_id, `Tip ID: ${user.latest_tip_id}`]);
+        `,
+          [user.public_id, `Tip ID: ${user.latest_tip_id}`]
+        );
       }
     }
-    
+
     // Send notifications in chunks
     if (messages.length > 0) {
       let chunks = expo.chunkPushNotifications(messages);
-      console.log(`Sending ${messages.length} notifications in ${chunks.length} chunks`);
-      
+      console.log(
+        `Sending ${messages.length} notifications in ${chunks.length} chunks`
+      );
+
       for (let chunk of chunks) {
         try {
           await expo.sendPushNotificationsAsync(chunk);
         } catch (error) {
-          console.error('Error sending push notifications:', error);
+          console.error("Error sending push notifications:", error);
         }
       }
     } else {
-      console.log('No notifications to send');
+      console.log("No notifications to send");
     }
   } catch (error) {
-    console.error('Error in sendTipNotifications:', error);
+    console.error("Error in sendTipNotifications:", error);
   }
 }
 
@@ -1590,7 +1604,7 @@ async function startServer() {
           gender: basicInfo.rows[0]?.gender || "Not Specified",
           // Add tip settings
           tip_frequency: userSettings.rows[0]?.tip_frequency || "daily",
-          last_seen_tip_id: userSettings.rows[0]?.last_seen_tip_id || 0
+          last_seen_tip_id: userSettings.rows[0]?.last_seen_tip_id || 0,
         };
 
         res.json(profileData);
@@ -1797,12 +1811,12 @@ async function startServer() {
     // Complete an exercise
     app.post("/api/complete-exercise", async (req, res) => {
       const { publicId, exercise, calories, duration } = req.body;
-    
+
       try {
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-    
+
           // Add exercise completion record with duration
           await client.query(
             `INSERT INTO user_workout_progress 
@@ -1812,7 +1826,7 @@ async function startServer() {
             DO NOTHING`,
             [publicId, exercise, calories, duration]
           );
-    
+
           // Update daily calories with explicit date
           await client.query(
             `INSERT INTO daily_progress 
@@ -1824,7 +1838,7 @@ async function startServer() {
               updated_at = CURRENT_TIMESTAMP`,
             [publicId, calories]
           );
-    
+
           await client.query("COMMIT");
           res.json({ message: "Exercise completed successfully" });
         } catch (e) {
@@ -2057,9 +2071,9 @@ async function startServer() {
           [tipData.tip, tipData.source, tipData.category]
         );
 
-        res.json({ 
-          message: "Nutritional tip created successfully", 
-          tip: result.rows[0]
+        res.json({
+          message: "Nutritional tip created successfully",
+          tip: result.rows[0],
         });
       } catch (error) {
         console.error("Error creating nutritional tip:", error);
@@ -2082,7 +2096,7 @@ async function startServer() {
         if (tipResult.rows.length === 0) {
           // No tips exist, create a new one
           const tipData = await generateNutritionalTip();
-          
+
           const newTipResult = await pool.query(
             `INSERT INTO nutritional_tips (tip, source, category) 
              VALUES ($1, $2, $3) 
@@ -2100,9 +2114,9 @@ async function startServer() {
           const lastSeenTipId = userResult.rows[0]?.last_seen_tip_id || 0;
           const isNewTip = lastSeenTipId < newTipResult.rows[0].id;
 
-          res.json({ 
+          res.json({
             tip: newTipResult.rows[0],
-            isNew: isNewTip
+            isNew: isNewTip,
           });
         } else {
           // Get the user's last seen tip
@@ -2115,9 +2129,9 @@ async function startServer() {
           const lastSeenTipId = userResult.rows[0]?.last_seen_tip_id || 0;
           const isNewTip = lastSeenTipId < tipResult.rows[0].id;
 
-          res.json({ 
+          res.json({
             tip: tipResult.rows[0],
-            isNew: isNewTip
+            isNew: isNewTip,
           });
         }
       } catch (error) {
@@ -2153,7 +2167,7 @@ async function startServer() {
 
       try {
         // Validate frequency value
-        const validFrequencies = ['hourly', 'daily', 'weekly', 'never'];
+        const validFrequencies = ["hourly", "daily", "weekly", "never"];
         if (!validFrequencies.includes(tipFrequency)) {
           return res.status(400).json({ error: "Invalid frequency value" });
         }
@@ -2179,7 +2193,7 @@ async function startServer() {
 
       try {
         // Validate token
-        if (!token || typeof token !== 'string') {
+        if (!token || typeof token !== "string") {
           return res.status(400).json({ error: "Invalid token" });
         }
 
@@ -2197,40 +2211,84 @@ async function startServer() {
       }
     });
 
-    // Schedule cronjobs
-    
-    // Generate a new nutritional tip daily at midnight
-    cron.schedule('0 0 * * *', async () => {
+    // Add this to your server.js
+    app.post("/api/test-notification", async (req, res) => {
+      const { publicId } = req.body;
+
       try {
-        console.log('Running scheduled task: Generate new nutritional tip');
+        // Get the user's push token
+        const userResult = await pool.query(
+          `SELECT push_token FROM users WHERE public_id = $1`,
+          [publicId]
+        );
+
+        const pushToken = userResult.rows[0]?.push_token;
+
+        if (!pushToken || !Expo.isExpoPushToken(pushToken)) {
+          return res
+            .status(400)
+            .json({ error: "No valid push token found for this user" });
+        }
+
+        // Send a test notification
+        const message = {
+          to: pushToken,
+          sound: "default",
+          title: "Test Notification",
+          body: "This is a test notification from DIANA!",
+          data: { testData: "Test data" },
+        };
+
+        const chunks = expo.chunkPushNotifications([message]);
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunks[0]);
+
+        res.json({
+          success: true,
+          message: "Test notification sent",
+        });
+      } catch (error) {
+        console.error("Error sending test notification:", error);
+        res.status(500).json({ error: "Failed to send test notification" });
+      }
+    });
+
+    // Schedule cronjobs
+
+    // Generate a new nutritional tip daily at midnight
+    cron.schedule("0 0 * * *", async () => {
+      try {
+        console.log("Running scheduled task: Generate new nutritional tip");
         const tipData = await generateNutritionalTip();
-        
+
         await pool.query(
           `INSERT INTO nutritional_tips (tip, source, category) 
            VALUES ($1, $2, $3)`,
           [tipData.tip, tipData.source, tipData.category]
         );
-        
-        console.log('New nutritional tip generated successfully');
+
+        console.log("New nutritional tip generated successfully");
       } catch (error) {
-        console.error('Error in scheduled task - Generate nutritional tip:', error);
+        console.error(
+          "Error in scheduled task - Generate nutritional tip:",
+          error
+        );
       }
     });
 
     // Send push notifications at different frequencies
-    
+
     // Hourly notifications (check every hour)
-    cron.schedule('0 * * * *', () => {
+    cron.schedule("0 * * * *", () => {
       sendTipNotifications();
     });
 
     // Daily notifications (9 AM)
-    cron.schedule('0 9 * * *', () => {
+    cron.schedule("0 9 * * *", () => {
       sendTipNotifications();
     });
 
     // Weekly notifications (Monday 9 AM)
-    cron.schedule('0 9 * * 1', () => {
+    cron.schedule("0 9 * * 1", () => {
       sendTipNotifications();
     });
 
